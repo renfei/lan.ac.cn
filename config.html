@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <title>内网配置 · lan.ac.cn</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/languages/shell.min.js"></script>
+
+    <style type="text/css" media="screen">
+        body {
+            background-color: #f1f1f1;
+            margin: 0;
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+        }
+
+        .container {
+            margin: 50px auto 40px auto;
+            width: 600px;
+            text-align: center;
+        }
+
+        a {
+            color: #4183c4;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        h1 {
+            width: 800px;
+            position: relative;
+            left: -100px;
+            letter-spacing: -1px;
+            line-height: 60px;
+            font-size: 60px;
+            font-weight: 100;
+            margin: 0px 0 50px 0;
+            text-shadow: 0 1px 0 #fff;
+        }
+
+        p {
+            color: rgba(0, 0, 0, 0.5);
+            margin: 20px 0;
+            line-height: 1.6;
+        }
+
+        ul {
+            list-style: none;
+            margin: 25px 0;
+            padding: 0;
+        }
+
+        li {
+            display: table-cell;
+            font-weight: bold;
+            width: 1%;
+        }
+
+        .suggestions {
+            margin-top: 35px;
+            color: #ccc;
+        }
+
+        .suggestions a {
+            color: #666666;
+            font-weight: 200;
+            font-size: 14px;
+            margin: 0 10px;
+        }
+
+        .left {
+            text-align: left;
+        }
+
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>内网配置</h1>
+    <p><strong>此配置案例使用 Ubuntu 进行演示</strong></p>
+    <p>
+        Redhat、CentOS 等操作系统命令与 Ubuntu 可能不一致，请自行搜索相关文档。
+    </p>
+    <h2>安装 Bind9</h2>
+    <pre class="shell left"><code># 安装依赖软件包
+sudo apt install -y bind9 bind9-host dnsutils</code></pre>
+    <h2>设置开机启动</h2>
+    <pre class="left"><code class="language-shell"># 启动 Bind9
+sudo systemctl start named
+
+# 开机启动 Bind9
+sudo systemctl enable named
+
+# 查看运行状态
+sudo systemctl status named</code></pre>
+    <h2>防火墙放行 53 端口</h2>
+    <pre class="left"><code class="language-shell">sudo ufw allow Bind9</code></pre>
+    <h2>配置 Bind9</h2>
+    <pre class="left"><code class="language-shell">sudo nano /etc/bind/named.conf.options</code></pre>
+    <p class="left">
+        修改或添加以下内容，允许其他人查询DNS，并且在本机查询不到时，转发到外部DNS服务器；并对 "lan.ac.cn" 解析进行拦截在本机解析。
+    </p>
+    <pre class="left"><code class="language-text">options {
+        listen-on port 53 { any; };
+        allow-query     { any; };
+        forward         first;
+        forwarders      { 223.5.5.5; 223.6.6.6; 119.29.29.29; 119.28.28.28; 114.114.114.114; 114.114.115.115; };
+}
+
+zone "lan.ac.cn" {
+	type master;
+	file "lan.ac.cn_zone";
+};</code></pre>
+    <h3>配置域名解析</h3>
+    <p class="left">
+        编辑域名正向解析的域文件：
+    </p>
+    <pre class="left"><code class="language-shell">vim /var/named/lan.ac.cn_zone</code></pre>
+    <p class="left">
+        在 lan.ac.cn_zone 文件中添加以下内容：
+    </p>
+    <pre class="left"><code class="language-text">$TTL	60
+@		IN 	SOA 	ns1.renfei.net. hostmaster.renfei.net. (2024072701 3600 1200 1209600 600)
+@ 		IN 	NS 		ns1.renfei.net.
+@ 		IN 	NS 		ns2.renfei.net.
+www		IN 	A 		192.168.4.21</code></pre>
+    <p class="left">
+        在上方解析内容中，SOA、NS 必须存在，其他内容根据需要添加；在案例中：www 意思为 www.lan.ac.cn 解析到 192.168.4.21
+    </p>
+    <h4>验证 Bind9 语法</h4>
+    <pre class="shell left"><code>named-checkconf</code></pre>
+    <h4>重启 Bind9</h4>
+    <pre class="shell left"><code>sudo systemctl restart named</code></pre>
+    <h4>验证 DNS 解析</h4>
+    <pre class="shell left"><code>dig @127.0.0.1 www.lan.ac.cn
+
+; <<>> DiG 9.11.4 <<>> @127.0.0.1 www.lan.ac.cn
+; (1 server found)
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 27619
+;; flags: qr aa rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 2, ADDITIONAL: 1
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 4096
+;; QUESTION SECTION:
+;www.lan.ac.cn.			IN	A
+
+;; ANSWER SECTION:
+www.lan.ac.cn.		60	IN	A	192.168.4.21
+
+;; AUTHORITY SECTION:
+lan.ac.cn.		60	IN	NS	ns2.renfei.net.
+lan.ac.cn.		60	IN	NS	ns1.renfei.net.
+
+;; Query time: 0 msec
+;; SERVER: 127.0.0.1#53(127.0.0.1)
+;; WHEN: Mon Jul 29 17:25:52 CST 2024
+;; MSG SIZE  rcvd: 104</code></pre>
+    <h2>其他配置</h2>
+    <p class="left">
+        在内网搭建好此 DNS 服务器以后，还需要到路由器中配置 DHCP 服务，将分配给内网设备的 DNS 指向此内网服务器。
+        如果内网没有 DHCP 自动分配 IP，可以手动设置设备的 IP 地址和 DNS 指向本服务器。
+    </p>
+    <div class="suggestions">
+        <a href="https://www.renfei.net" target="_blank">域名维护者</a> —
+        <a href="/config.html" target="_blank">内网DNS配置</a> —
+        <a href="mailto:i@renfei.net" target="_blank">i@renfei.net</a>
+    </div>
+    <div class="suggestions">
+        LAN: Local Area Network
+    </div>
+</div>
+
+<script>hljs.highlightAll();</script>
+</body>
+</html>
